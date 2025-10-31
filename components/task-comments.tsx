@@ -316,7 +316,7 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
             <div className="text-center py-8 text-muted-foreground">
               <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No comments yet</p>
-              <p className="text-sm">Be the first to comment on this task</p>
+              <p className="text-sm">เพิ่มความคิดเห็นแรกเกี่ยงกับงานนี้เลย</p>
             </div>
           )}
         </div>
