@@ -1,32 +1,30 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { 
-  MessageSquare, 
-  Send, 
-  MoreHorizontal, 
+  Activity, 
+  Plus, 
   Edit, 
-  Trash2,
-  Loader2
+  Trash2, 
+  MessageSquare, 
+  Users,
+  FolderOpen,
+  Columns,
+  CheckSquare
 } from 'lucide-react';
 
-interface TaskComment {
+interface ActivityLog {
   id: string;
-  content: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  details: any;
   created_at: string;
-  updated_at: string;
   user_id: string;
   profiles: {
     id: string;
@@ -36,27 +34,23 @@ interface TaskComment {
   };
 }
 
-interface TaskCommentsProps {
-  taskId: string;
-  currentUserId: string;
+interface ActivityFeedProps {
+  projectId: string;
+  limit?: number;
 }
 
-export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
-  const [comments, setComments] = useState<TaskComment[]>([]);
+export function ActivityFeed({ projectId, limit = 20 }: ActivityFeedProps) {
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newComment, setNewComment] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [editingComment, setEditingComment] = useState<string | null>(null);
-  const [editContent, setEditContent] = useState('');
 
   useEffect(() => {
-    loadComments();
-  }, [taskId]);
+    loadActivities();
+  }, [projectId]);
 
-  const loadComments = async () => {
+  const loadActivities = async () => {
     try {
-      const { data: comments, error } = await supabase
-        .from('task_comments')
+      let query = supabase
+        .from('activity_logs')
         .select(`
           *,
           profiles:user_id (
@@ -66,107 +60,121 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
             avatar_url
           )
         `)
-        .eq('task_id', taskId)
-        .order('created_at', { ascending: true });
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false });
+
+      if (limit) {
+        query = query.limit(limit);
+      }
+
+      const { data: activities, error } = await query;
 
       if (error) throw error;
-      setComments(comments || []);
+      setActivities(activities || []);
     } catch (error: any) {
-      console.error('Error loading comments:', error);
-      toast.error('Failed to load comments');
+      console.error('เกิดข้อผิดพลาดในการโหลดกิจกรรม:', error);
+      toast.error('ไม่สามารถโหลดฟีดกิจกรรมได้');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSubmitComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newComment.trim()) {
-      toast.error('Please enter a comment');
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      const { error } = await supabase
-        .from('task_comments')
-        .insert({
-          task_id: taskId,
-          user_id: currentUserId,
-          content: newComment.trim(),
-        });
-
-      if (error) throw error;
-
-      setNewComment('');
-      await loadComments();
-      toast.success('Comment added successfully!');
-    } catch (error: any) {
-      console.error('Error adding comment:', error);
-      toast.error('Failed to add comment');
-    } finally {
-      setSubmitting(false);
+  const getActivityIcon = (entityType: string, action: string) => {
+    switch (entityType) {
+      case 'project':
+        return <FolderOpen className="h-4 w-4" />;
+      case 'column':
+        return <Columns className="h-4 w-4" />;
+      case 'task':
+        return <CheckSquare className="h-4 w-4" />;
+      case 'comment':
+        return <MessageSquare className="h-4 w-4" />;
+      case 'member':
+        return <Users className="h-4 w-4" />;
+      default:
+        return <Activity className="h-4 w-4" />;
     }
   };
 
-  const handleEditComment = async (commentId: string) => {
-    if (!editContent.trim()) {
-      toast.error('Please enter a comment');
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('task_comments')
-        .update({
-          content: editContent.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', commentId);
-
-      if (error) throw error;
-
-      setEditingComment(null);
-      setEditContent('');
-      await loadComments();
-      toast.success('Comment updated successfully!');
-    } catch (error: any) {
-      console.error('Error updating comment:', error);
-      toast.error('Failed to update comment');
+  const getActivityColor = (action: string) => {
+    switch (action) {
+      case 'created':
+        return 'text-green-600 bg-green-100 dark:bg-green-900/20';
+      case 'updated':
+        return 'text-blue-600 bg-blue-100 dark:bg-blue-900/20';
+      case 'deleted':
+        return 'text-red-600 bg-red-100 dark:bg-red-900/20';
+      default:
+        return 'text-gray-600 bg-gray-100 dark:bg-gray-900/20';
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!confirm('Are you sure you want to delete this comment?')) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('task_comments')
-        .delete()
-        .eq('id', commentId);
-
-      if (error) throw error;
-
-      await loadComments();
-      toast.success('Comment deleted successfully!');
-    } catch (error: any) {
-      console.error('Error deleting comment:', error);
-      toast.error('Failed to delete comment');
+  // ฟังก์ชันช่วยแปลง action ให้เป็นข้อความภาษาไทย (สำหรับ badge และประโยค)
+  const actionLabelThai = (action: string) => {
+    switch (action) {
+      case 'created':
+        return 'สร้าง';
+      case 'updated':
+        return 'แก้ไข';
+      case 'deleted':
+        return 'ลบ';
+      default:
+        return action; // เผื่อมี action อื่น ๆ ที่ไม่ได้ระบุไว้
     }
   };
 
-  const startEditing = (comment: TaskComment) => {
-    setEditingComment(comment.id);
-    setEditContent(comment.content);
+  // ฟังก์ชันช่วยแปลง entity_type เป็นคำไทย (ไว้ใช้ในข้อความทั่วไปกรณี default)
+  const entityTypeThai = (entityType: string) => {
+    switch (entityType) {
+      case 'project':
+        return 'โปรเจกต์';
+      case 'column':
+        return 'คอลัมน์';
+      case 'task':
+        return 'งาน';
+      case 'comment':
+        return 'ความคิดเห็น';
+      case 'member':
+        return 'สมาชิก';
+      default:
+        return entityType; // กรณีมีชนิดอื่น ๆ
+    }
   };
 
-  const cancelEditing = () => {
-    setEditingComment(null);
-    setEditContent('');
+  const formatActivityMessage = (activity: ActivityLog) => {
+    const { action, entity_type, details } = activity;
+    const userName = activity.profiles.full_name || activity.profiles.email;
+    const actionTh = actionLabelThai(action);
+
+    switch (entity_type) {
+      case 'project':
+        // เช่น "สมชาย สร้างโปรเจกต์"
+        return `${userName} ${actionTh}โปรเจกต์`;
+      case 'column': {
+        const columnName = details?.name || details?.new?.name || 'คอลัมน์';
+        // เช่น "สมชาย สร้างคอลัมน์ "To Do""
+        return `${userName} ${actionTh}คอลัมน์ "${columnName}"`;
+      }
+      case 'task': {
+        const taskTitle = details?.title || details?.new?.title || 'งาน';
+        // เช่น "สมชาย แก้ไขงาน "ออกแบบหน้าแรก""
+        return `${userName} ${actionTh}งาน "${taskTitle}"`;
+      }
+      case 'comment':
+        // เช่น "สมชาย สร้างความคิดเห็น"
+        return `${userName} ${actionTh}ความคิดเห็น`;
+      case 'member':
+        // กรณี member ใช้ข้อความพิเศษ
+        if (action === 'created') {
+          return `${userName} เข้าร่วมโปรเจกต์`;
+        } else if (action === 'deleted' || action === 'ลบ') {
+          return `${userName} ออกจากโปรเจกต์`;
+        }
+        return `${userName} ${actionTh}สมาชิกในทีม`;
+      default:
+        // เช่น "สมชาย แก้ไข entity_type"
+        return `${userName} ${actionTh}${entityTypeThai(entity_type)}`;
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -176,10 +184,13 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
 
     if (diffInHours < 1) {
       const diffInMinutes = Math.floor(diffInHours * 60);
-      return diffInMinutes <= 1 ? 'Just now' : `${diffInMinutes} minutes ago`;
+      return diffInMinutes <= 1 ? 'เมื่อสักครู่' : `${diffInMinutes} นาทีที่แล้ว`;
     } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)} hours ago`;
+      return `${Math.floor(diffInHours)} ชั่วโมงที่แล้ว`;
+    } else if (diffInHours < 168) { // 7 days
+      return `${Math.floor(diffInHours / 24)} วันที่แล้ว`;
     } else {
+      // แสดงวันที่ท้องถิ่นเป็นไทย (ขึ้นกับ locale ของระบบผู้ใช้)
       return date.toLocaleDateString();
     }
   };
@@ -188,9 +199,9 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center text-lg">
-            <MessageSquare className="h-5 w-5 mr-2" />
-            Comments
+          <CardTitle className="flex items-center">
+            <Activity className="h-5 w-5 mr-2" />
+            กิจกรรมล่าสุด
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -205,118 +216,54 @@ export function TaskComments({ taskId, currentUserId }: TaskCommentsProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center text-lg">
-          <MessageSquare className="h-5 w-5 mr-2" />
-          Comments ({comments.length})
+        <CardTitle className="flex items-center">
+          <Activity className="h-5 w-5 mr-2" />
+          กิจกรรมล่าสุด
         </CardTitle>
         <CardDescription>
-          Discuss this task with your team
+          ดูกิจกรรมที่เกิดขึ้นในโปรเจกต์นี้แบบเรียลไทม์
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Add Comment Form */}
-        <form onSubmit={handleSubmitComment} className="space-y-3">
-          <Textarea
-            placeholder="Add a comment..."
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            rows={3}
-            className="resize-none"
-          />
-          <div className="flex justify-end">
-            <Button type="submit" disabled={submitting || !newComment.trim()}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              <Send className="mr-2 h-4 w-4" />
-              Add Comment
-            </Button>
-          </div>
-        </form>
-
-        {/* Comments List */}
+      <CardContent>
         <div className="space-y-4">
-          {comments.map((comment) => (
-            <div key={comment.id} className="flex space-x-3">
+          {activities.map((activity) => (
+            <div key={activity.id} className="flex items-start space-x-3">
               <Avatar className="h-8 w-8 flex-shrink-0">
-                <AvatarImage src={comment.profiles.avatar_url || ''} alt={comment.profiles.full_name || ''} />
+                <AvatarImage src={activity.profiles.avatar_url || ''} alt={activity.profiles.full_name || ''} />
                 <AvatarFallback className="text-xs">
-                  {comment.profiles.full_name 
-                    ? comment.profiles.full_name.charAt(0).toUpperCase() 
-                    : comment.profiles.email.charAt(0).toUpperCase()
+                  {activity.profiles.full_name 
+                    ? activity.profiles.full_name.charAt(0).toUpperCase() 
+                    : activity.profiles.email.charAt(0).toUpperCase()
                   }
                 </AvatarFallback>
               </Avatar>
               
-              <div className="flex-1 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium text-sm">
-                      {comment.profiles.full_name || comment.profiles.email}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(comment.created_at)}
-                      {comment.updated_at !== comment.created_at && ' (edited)'}
-                    </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center space-x-2">
+                  <div className={`p-1 rounded-full ${getActivityColor(activity.action)}`}>
+                    {getActivityIcon(activity.entity_type, activity.action)}
                   </div>
-                  
-                  {comment.user_id === currentUserId && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                          <MoreHorizontal className="h-3 w-3" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => startEditing(comment)}>
-                          <Edit className="h-4 w-4 mr-2" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                  <Badge variant="outline" className="text-xs">
+                    {actionLabelThai(activity.action)}
+                  </Badge>
                 </div>
                 
-                {editingComment === comment.id ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      rows={3}
-                      className="resize-none"
-                    />
-                    <div className="flex gap-2">
-                      <Button 
-                        size="sm" 
-                        onClick={() => handleEditComment(comment.id)}
-                        disabled={!editContent.trim()}
-                      >
-                        Save
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={cancelEditing}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-muted/50 rounded-lg p-3">
-                    <p className="text-sm whitespace-pre-wrap">{comment.content}</p>
-                  </div>
-                )}
+                <p className="text-sm text-foreground mt-1">
+                  {formatActivityMessage(activity)}
+                </p>
+                
+                <p className="text-xs text-muted-foreground mt-1">
+                  {formatDate(activity.created_at)}
+                </p>
               </div>
             </div>
           ))}
 
-          {comments.length === 0 && (
+          {activities.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
-              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No comments yet</p>
-              <p className="text-sm">Be the first to comment on this task</p>
+              <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>ยังไม่มีกิจกรรมใด ๆ</p>
+              <p className="text-sm">กิจกรรมจะแสดงที่นี่เมื่อมีการทำงานในโปรเจกต์</p>
             </div>
           )}
         </div>
